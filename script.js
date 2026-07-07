@@ -79,6 +79,11 @@ return Math.sqrt(dx*dx+dy*dy);
 
 function draw(){
 
+if (!video.videoWidth || !video.videoHeight) {
+    requestAnimationFrame(draw);
+    return;
+}
+
 ctx.clearRect(0,0,canvas.width,canvas.height);
 
 let w=video.videoWidth;
