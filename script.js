@@ -153,7 +153,8 @@ requestAnimationFrame(draw);
 
 }
 
-video.onloadeddata=draw;
+await video.play();
+draw();
 
 document.getElementById("vrButton").onclick=()=>{
 
