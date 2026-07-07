@@ -15,17 +15,34 @@ let stereo=false;
 canvas.width=window.innerWidth;
 canvas.height=window.innerHeight;
 
-navigator.mediaDevices.getUserMedia({
+// Detect mobile devices
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
-video:{
-facingMode:"environment"
+const constraints = {
+    video: isMobile
+        ? {
+            facingMode: {
+                ideal: "environment" // Rear camera
+            }
+        }
+        : true,
+    audio: false
+};
+
+try {
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+    video.srcObject = stream;
+} catch (err) {
+    console.error("Couldn't access preferred camera, trying any camera...", err);
+
+    // Fallback if the rear camera isn't available
+    const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: false
+    });
+
+    video.srcObject = stream;
 }
-
-}).then(stream=>{
-
-video.srcObject=stream;
-
-});
 
 const vision=await FilesetResolver.forVisionTasks(
 "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
