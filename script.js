@@ -19,15 +19,25 @@ canvas.height=window.innerHeight;
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
 const constraints = {
-    video: isMobile
-        ? {
-            facingMode: {
-                ideal: "environment" // Rear camera
-            }
-        }
-        : true,
+   video: isMobile
+?{
+    facingMode:{
+        ideal:"environment"
+    },
+    width:{ideal:1280},
+    height:{ideal:720},
+    frameRate:{ideal:24,max:24}
+}
+:true
     audio: false
 };
+
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+const TARGET_FPS = isMobile ? 24 : 60;
+const FRAME_TIME = 1000 / TARGET_FPS;
+
+let lastFrame = 0;
 
 try {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -77,12 +87,14 @@ return Math.sqrt(dx*dx+dy*dy);
 
 }
 
-function draw(){
+requestAnimationFrame(draw);
 
-if (!video.videoWidth || !video.videoHeight) {
+function draw(now = 0) {
+
     requestAnimationFrame(draw);
-    return;
-}
+
+    if (now - lastFrame < FRAME_TIME) return;
+    lastFrame = now;
 
 ctx.clearRect(0,0,canvas.width,canvas.height);
 
@@ -108,11 +120,59 @@ canvas.height
 
 );
 
+const vrButton = document.getElementById("vrButton");
+
+vrButton.onclick = async () => {
+
+    stereo = !stereo;
+
+    if (stereo) {
+
+        try {
+            await document.documentElement.requestFullscreen();
+        } catch (e) {}
+
+        if (screen.orientation?.lock) {
+            try {
+                await screen.orientation.lock("landscape");
+            } catch (e) {}
+        }
+
+    } else {
+
+        if (document.fullscreenElement) {
+            await document.exitFullscreen();
+        }
+
+        if (screen.orientation?.unlock) {
+            screen.orientation.unlock();
+        }
+
+    }
+
+};
+    
 if(stereo){
 
-ctx.drawImage(canvas,0,0,canvas.width/2,canvas.height);
+ctx.clearRect(0,0,canvas.width,canvas.height);
 
-ctx.drawImage(canvas,canvas.width/2,0,canvas.width/2,canvas.height);
+const half = canvas.width / 2;
+
+ctx.drawImage(
+    video,
+    sx,sy,sw,sh,
+    0,0,
+    half,
+    canvas.height
+);
+
+ctx.drawImage(
+    video,
+    sx,sy,sw,sh,
+    half,0,
+    half,
+    canvas.height
+);
 
 }
 
