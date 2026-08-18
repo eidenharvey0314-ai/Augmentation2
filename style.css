@@ -2,17 +2,16 @@
   box-sizing: border-box;
 }
 
-body, html {
+html, body {
   margin: 0;
   padding: 0;
-  width: 100vw;
-  height: 100vh;
-  background-color: #000;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  background-color: #000;
   font-family: sans-serif;
 }
 
-/* Main Viewport Container - Edge-to-Edge Fullscreen */
 #app-container {
   display: flex;
   width: 100vw;
@@ -22,7 +21,6 @@ body, html {
   left: 0;
 }
 
-/* Eye split-screen wrappers */
 .eye-view {
   position: relative;
   flex: 1;
@@ -32,27 +30,25 @@ body, html {
   background: #000;
 }
 
-/* Secondary eye hidden until VR mode is enabled */
 #right-eye {
   display: none;
   border-left: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 video {
-  display: none; /* Keep video source offscreen in memory */
+  display: none;
 }
 
-/* Stretches the camera & overlay canvas across the entire screen */
+/* Force canvas to strictly stretch across the parent container */
 canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
   position: absolute;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover; /* Forces camera view to cover entire screen */
 }
 
-/* Minimalist status text overlay */
 #status {
   position: absolute;
   top: 16px;
@@ -67,7 +63,6 @@ canvas {
   transition: opacity 0.5s ease;
 }
 
-/* Tiny VR button anchored to the bottom right */
 #vr-btn {
   position: absolute;
   bottom: 20px;
