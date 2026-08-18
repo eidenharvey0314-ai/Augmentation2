@@ -89,30 +89,60 @@ function updateTrackingHistory(predictions) {
   trackedObjects = updatedTracked;
 }
 
-// Render video frame and overlay visuals
-function renderFrame(ctx, width, height) {
-  ctx.clearRect(0, 0, width, height);
-  ctx.drawImage(video, 0, 0, width, height);
+// Render video frame stretched edge-to-edge on canvas
+function renderFrame(ctx, canvas) {
+  const containerWidth = canvas.clientWidth;
+  const containerHeight = canvas.clientHeight;
 
-  const scaleX = width / video.videoWidth;
-  const scaleY = height / video.videoHeight;
+  // Resize internal canvas buffer to match pixel size of display
+  if (canvas.width !== containerWidth || canvas.height !== containerHeight) {
+    canvas.width = containerWidth;
+    canvas.height = containerHeight;
+  }
+
+  ctx.clearRect(0, 0, containerWidth, containerHeight);
+
+  // Calculate object-fit cover dimensions for video frame
+  const videoRatio = video.videoWidth / video.videoHeight;
+  const containerRatio = containerWidth / containerHeight;
+
+  let renderWidth, renderHeight, offsetX, offsetY;
+
+  if (containerRatio > videoRatio) {
+    renderWidth = containerWidth;
+    renderHeight = containerWidth / videoRatio;
+    offsetX = 0;
+    offsetY = (containerHeight - renderHeight) / 2;
+  } else {
+    renderWidth = containerHeight * videoRatio;
+    renderHeight = containerHeight;
+    offsetX = (containerWidth - renderWidth) / 2;
+    offsetY = 0;
+  }
+
+  // Draw Fullscreen Cover Video Frame
+  ctx.drawImage(video, offsetX, offsetY, renderWidth, renderHeight);
+
+  // Scaling ratios for overlay boxes
+  const scaleX = renderWidth / video.videoWidth;
+  const scaleY = renderHeight / video.videoHeight;
 
   trackedObjects.forEach(obj => {
     const [x, y, w, h] = obj.bbox;
 
-    const scaledX = x * scaleX;
-    const scaledY = y * scaleY;
+    const scaledX = (x * scaleX) + offsetX;
+    const scaledY = (y * scaleY) + offsetY;
     const scaledW = w * scaleX;
     const scaledH = h * scaleY;
 
-    // 1. Motion Trail Line
+    // 1. Draw Motion Trail Line
     if (obj.history.length > 1) {
       ctx.beginPath();
       ctx.strokeStyle = 'rgba(0, 255, 136, 0.6)';
       ctx.lineWidth = 2;
       obj.history.forEach((pt, i) => {
-        const hX = pt.x * scaleX;
-        const hY = pt.y * scaleY;
+        const hX = (pt.x * scaleX) + offsetX;
+        const hY = (pt.y * scaleY) + offsetY;
         if (i === 0) ctx.moveTo(hX, hY);
         else ctx.lineTo(hX, hY);
       });
@@ -125,8 +155,8 @@ function renderFrame(ctx, width, height) {
     ctx.strokeRect(scaledX, scaledY, scaledW, scaledH);
 
     // 3. Center Point
-    const cx = obj.centerX * scaleX;
-    const cy = obj.centerY * scaleY;
+    const cx = (obj.centerX * scaleX) + offsetX;
+    const cy = (obj.centerY * scaleY) + offsetY;
     ctx.fillStyle = '#00FF88';
     ctx.beginPath();
     ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
@@ -147,24 +177,17 @@ function renderFrame(ctx, width, height) {
 
 // Frame Processing Loop
 async function processFrame() {
-  if (canvasLeft.width !== video.videoWidth) {
-    canvasLeft.width = video.videoWidth;
-    canvasLeft.height = video.videoHeight;
-    canvasRight.width = video.videoWidth;
-    canvasRight.height = video.videoHeight;
-  }
-
-  if (!isDetecting) {
+  if (!isDetecting && video.readyState === 4) {
     isDetecting = true;
     const predictions = await model.detect(video);
     updateTrackingHistory(predictions);
     isDetecting = false;
   }
 
-  renderFrame(ctxLeft, canvasLeft.width, canvasLeft.height);
+  renderFrame(ctxLeft, canvasLeft);
 
   if (isVrMode) {
-    renderFrame(ctxRight, canvasRight.width, canvasRight.height);
+    renderFrame(ctxRight, canvasRight);
   }
 
   requestAnimationFrame(processFrame);
