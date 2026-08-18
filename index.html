@@ -1,25 +1,159 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Object Tracker</title>
+  
+  <!-- Load TensorFlow.js and Coco-SSD Model -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #121212;
+      color: #ffffff;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
 
-<title>Augment Vision</title>
+    .container {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      aspect-ratio: 4 / 3;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
 
-<link rel="stylesheet" href="style.css">
+    video, canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
 
-<script type="module" src="script.js"></script>
-
+    #status {
+      margin-top: 16px;
+      font-size: 0.95rem;
+      color: #a0a0a0;
+    }
+  </style>
 </head>
-
 <body>
 
-<video id="video" autoplay playsinline></video>
+  <div class="container">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="output"></canvas>
+  </div>
+  <p id="status">Loading object detection model...</p>
 
-<canvas id="canvas"></canvas>
+  <script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('output');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
 
-<button id="vrButton">◉</button>
+    let model;
 
+    // 1. Initialize Rear Camera
+    async function setupCamera() {
+      const constraints = {
+        video: {
+          facingMode: { exact: "environment" }, // Defaults to rear camera on mobile
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      };
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+      } catch (err) {
+        // Fallback to default/environment camera if 'exact' constraint fails (e.g., on laptops)
+        console.warn("Exact rear camera not found, falling back to default camera:", err);
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        video.srcObject = fallbackStream;
+      }
+
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+          resolve(video);
+        };
+      });
+    }
+
+    // 2. Track & Draw Objects Frame-by-Frame
+    async function detectObjects() {
+      // Sync canvas dimensions with video
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const predictions = await model.detect(video);
+
+      // Clear previous overlay
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Filter and limit predictions to 2–4 top objects
+      const filtered = predictions
+        .filter(pred => pred.score > 0.5) // Minimum confidence threshold
+        .slice(0, 4);                     // Max 4 objects
+
+      // Draw bounding boxes and labels
+      filtered.forEach((prediction) => {
+        const [x, y, width, height] = prediction.bbox;
+
+        // Bounding Box
+        ctx.strokeStyle = '#00FF88';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, width, height);
+
+        // Label Background
+        ctx.fillStyle = '#00FF88';
+        const textWidth = ctx.measureText(prediction.class).width;
+        ctx.fillRect(x, y > 20 ? y - 24 : y, textWidth + 12, 24);
+
+        // Label Text
+        ctx.fillStyle = '#000000';
+        ctx.font = '14px sans-serif';
+        ctx.fillText(
+          `${prediction.class} (${Math.round(prediction.score * 100)}%)`,
+          x + 4,
+          y > 20 ? y - 7 : y + 16
+        );
+      });
+
+      // Continue detection loop
+      requestAnimationFrame(detectObjects);
+    }
+
+    // 3. Application Entry Point
+    async function main() {
+      try {
+        await setupCamera();
+        model = await cocoSsd.load();
+        statusText.innerText = "Tracking active (Tracking up to 4 objects)";
+        detectObjects();
+      } catch (error) {
+        statusText.innerText = "Error accessing camera or loading model: " + error.message;
+      }
+    }
+
+    main();
+  </script>
 </body>
 </html>
