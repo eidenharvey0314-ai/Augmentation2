@@ -5,25 +5,28 @@
 body, html {
   margin: 0;
   padding: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   background-color: #000;
   overflow: hidden;
   font-family: sans-serif;
 }
 
-/* Main Viewport Container */
+/* Main Viewport Container - Edge-to-Edge Fullscreen */
 #app-container {
   display: flex;
   width: 100vw;
   height: 100vh;
-  position: relative;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 /* Eye split-screen wrappers */
 .eye-view {
   position: relative;
   flex: 1;
+  width: 100%;
   height: 100%;
   overflow: hidden;
   background: #000;
@@ -32,29 +35,30 @@ body, html {
 /* Secondary eye hidden until VR mode is enabled */
 #right-eye {
   display: none;
-  border-left: 2px solid #222;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
 }
 
 video {
-  display: none; /* Keep video source in memory, offscreen */
+  display: none; /* Keep video source offscreen in memory */
 }
 
+/* Stretches the camera & overlay canvas across the entire screen */
 canvas {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: cover; /* Forces camera view to cover entire screen */
 }
 
-/* Status text overlay */
+/* Minimalist status text overlay */
 #status {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: 16px;
+  left: 16px;
   color: #00FF88;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.65);
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 0.85rem;
@@ -63,11 +67,11 @@ canvas {
   transition: opacity 0.5s ease;
 }
 
-/* VR button at bottom right */
+/* Tiny VR button anchored to the bottom right */
 #vr-btn {
   position: absolute;
-  bottom: 16px;
-  right: 16px;
+  bottom: 20px;
+  right: 20px;
   z-index: 20;
   width: 44px;
   height: 44px;
@@ -79,7 +83,8 @@ canvas {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+  -webkit-tap-highlight-color: transparent;
 }
 
 #vr-btn svg {
