@@ -1,1 +1,89 @@
+* {
+  box-sizing: border-box;
+}
 
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #000;
+  overflow: hidden;
+  font-family: sans-serif;
+}
+
+/* Main Viewport Container */
+#app-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+}
+
+/* Eye split-screen wrappers */
+.eye-view {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+}
+
+/* Secondary eye hidden until VR mode is enabled */
+#right-eye {
+  display: none;
+  border-left: 2px solid #222;
+}
+
+video {
+  display: none; /* Keep video source in memory, offscreen */
+}
+
+canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Status text overlay */
+#status {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  color: #00FF88;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  z-index: 10;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+/* VR button at bottom right */
+#vr-btn {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid #00FF88;
+  color: #00FF88;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+}
+
+#vr-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: #00FF88;
+}
