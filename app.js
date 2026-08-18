@@ -15,13 +15,13 @@ let isDetecting = false;
 let trackedObjects = [];
 let nextTrackId = 1;
 
-// Initialize Camera (Defaults to Rear Camera on Mobile)
+// 1. Setup Rear Camera
 async function setupCamera() {
   const constraints = {
     video: {
-      facingMode: { exact: "environment" },
-      width: { ideal: 640 }, // Optimized resolution for mobile performance
-      height: { ideal: 480 }
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
     },
     audio: false
   };
@@ -43,9 +43,9 @@ async function setupCamera() {
   });
 }
 
-// Match bounding boxes to previous frames for persistent tracking IDs
+// 2. Track Objects Across Frames
 function updateTrackingHistory(predictions) {
-  const currentDetections = predictions.slice(0, 4); // Capped at 4 items
+  const currentDetections = predictions.slice(0, 4);
   const updatedTracked = [];
 
   currentDetections.forEach(pred => {
@@ -73,7 +73,7 @@ function updateTrackingHistory(predictions) {
     }
 
     history.push({ x: centerX, y: centerY });
-    if (history.length > 10) history.shift(); // Trail length limit for performance
+    if (history.length > 10) history.shift();
 
     updatedTracked.push({
       id: id,
@@ -89,43 +89,36 @@ function updateTrackingHistory(predictions) {
   trackedObjects = updatedTracked;
 }
 
-// Render video frame stretched edge-to-edge on canvas
+// 3. Render Full-Cover Canvas Frame
 function renderFrame(ctx, canvas) {
-  const containerWidth = canvas.clientWidth;
-  const containerHeight = canvas.clientHeight;
+  const parent = canvas.parentElement;
+  const targetWidth = parent.clientWidth;
+  const targetHeight = parent.clientHeight;
 
-  // Resize internal canvas buffer to match pixel size of display
-  if (canvas.width !== containerWidth || canvas.height !== containerHeight) {
-    canvas.width = containerWidth;
-    canvas.height = containerHeight;
+  // Force physical canvas resolution to match display size exactly
+  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
   }
 
-  ctx.clearRect(0, 0, containerWidth, containerHeight);
+  ctx.clearRect(0, 0, targetWidth, targetHeight);
 
-  // Calculate object-fit cover dimensions for video frame
-  const videoRatio = video.videoWidth / video.videoHeight;
-  const containerRatio = containerWidth / containerHeight;
+  // Compute scale factors to cover full canvas (Object-Fit: Cover)
+  const vWidth = video.videoWidth || 640;
+  const vHeight = video.videoHeight || 480;
 
-  let renderWidth, renderHeight, offsetX, offsetY;
+  const scale = Math.max(targetWidth / vWidth, targetHeight / vHeight);
+  const renderW = vWidth * scale;
+  const renderH = vHeight * scale;
+  const offsetX = (targetWidth - renderW) / 2;
+  const offsetY = (targetHeight - renderH) / 2;
 
-  if (containerRatio > videoRatio) {
-    renderWidth = containerWidth;
-    renderHeight = containerWidth / videoRatio;
-    offsetX = 0;
-    offsetY = (containerHeight - renderHeight) / 2;
-  } else {
-    renderWidth = containerHeight * videoRatio;
-    renderHeight = containerHeight;
-    offsetX = (containerWidth - renderWidth) / 2;
-    offsetY = 0;
-  }
+  // Draw scaled camera background
+  ctx.drawImage(video, offsetX, offsetY, renderW, renderH);
 
-  // Draw Fullscreen Cover Video Frame
-  ctx.drawImage(video, offsetX, offsetY, renderWidth, renderHeight);
-
-  // Scaling ratios for overlay boxes
-  const scaleX = renderWidth / video.videoWidth;
-  const scaleY = renderHeight / video.videoHeight;
+  // Scale overlay coordinates
+  const scaleX = renderW / vWidth;
+  const scaleY = renderH / vHeight;
 
   trackedObjects.forEach(obj => {
     const [x, y, w, h] = obj.bbox;
@@ -135,7 +128,7 @@ function renderFrame(ctx, canvas) {
     const scaledW = w * scaleX;
     const scaledH = h * scaleY;
 
-    // 1. Draw Motion Trail Line
+    // Motion Trail
     if (obj.history.length > 1) {
       ctx.beginPath();
       ctx.strokeStyle = 'rgba(0, 255, 136, 0.6)';
@@ -149,12 +142,12 @@ function renderFrame(ctx, canvas) {
       ctx.stroke();
     }
 
-    // 2. Bounding Box
+    // Bounding Box
     ctx.strokeStyle = '#00FF88';
     ctx.lineWidth = 2;
     ctx.strokeRect(scaledX, scaledY, scaledW, scaledH);
 
-    // 3. Center Point
+    // Center Point
     const cx = (obj.centerX * scaleX) + offsetX;
     const cy = (obj.centerY * scaleY) + offsetY;
     ctx.fillStyle = '#00FF88';
@@ -162,7 +155,7 @@ function renderFrame(ctx, canvas) {
     ctx.arc(cx, cy, 4, 0, 2 * Math.PI);
     ctx.fill();
 
-    // 4. Label Badge
+    // Label Badge
     const labelText = `#${obj.id} ${obj.label} (${Math.round(obj.score * 100)}%)`;
     ctx.font = 'bold 12px sans-serif';
     const textWidth = ctx.measureText(labelText).width;
@@ -175,7 +168,7 @@ function renderFrame(ctx, canvas) {
   });
 }
 
-// Frame Processing Loop
+// 4. Main Processing Loop
 async function processFrame() {
   if (!isDetecting && video.readyState === 4) {
     isDetecting = true;
@@ -193,7 +186,7 @@ async function processFrame() {
   requestAnimationFrame(processFrame);
 }
 
-// VR Toggle and Fullscreen Rotation
+// 5. Toggle VR Split Screen
 async function toggleVR() {
   isVrMode = !isVrMode;
 
@@ -208,7 +201,7 @@ async function toggleVR() {
         await screen.orientation.lock('landscape').catch(() => {});
       }
     } catch (e) {
-      console.log("Fullscreen or orientation lock warning:", e);
+      console.log("Fullscreen lock warning:", e);
     }
   } else {
     rightEye.style.display = 'none';
@@ -224,7 +217,7 @@ async function toggleVR() {
 
 vrBtn.addEventListener('click', toggleVR);
 
-// Application Entry Point
+// Entry Point
 async function init() {
   try {
     await setupCamera();
@@ -238,5 +231,4 @@ async function init() {
   }
 }
 
-// Start once DOM is fully loaded
 document.addEventListener("DOMContentLoaded", init);
