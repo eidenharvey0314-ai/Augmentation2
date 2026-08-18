@@ -5,39 +5,368 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>VR Object Tracker</title>
   
-  <link rel="stylesheet" href="styles.css">
+  <!-- TensorFlow.js and Coco-SSD -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
-  <!-- TensorFlow.js and Coco-SSD Libraries -->
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd" defer></script>
-  <script src="app.js" defer></script>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background-color: #000000;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* Main Fullscreen Viewport */
+    #app-container {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: #000000;
+    }
+
+    /* Split-screen Viewport Containers */
+    .eye-view {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000000;
+    }
+
+    /* VR Eye Hidden by Default */
+    #right-eye {
+      display: none;
+      border-left: 2px solid #222222;
+    }
+
+    /* Video element kept strictly in memory */
+    video {
+      display: none;
+    }
+
+    /* Full-Bleed Edge-to-Edge Canvas */
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+
+    /* Minimalist HUD Overlay */
+    #status {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      color: #00FF88;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      z-index: 10;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+      backdrop-filter: blur(4px);
+    }
+
+    /* Tiny Floating VR Toggle Button */
+    #vr-btn {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 20;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.8);
+      border: 2px solid #00FF88;
+      color: #00FF88;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+      -webkit-tap-highlight-color: transparent;
+      outline: none;
+    }
+
+    #vr-btn svg {
+      width: 26px;
+      height: 26px;
+      fill: #00FF88;
+    }
+  </style>
 </head>
 <body>
 
-  <div id="status">Initializing Camera...</div>
+  <div id="status">Starting Camera...</div>
 
-  <!-- Main Viewport -->
   <div id="app-container">
-    <!-- Left Eye / Standard View -->
     <div class="eye-view" id="left-eye">
       <canvas id="canvas-left"></canvas>
     </div>
-
-    <!-- Right Eye (VR Mode) -->
     <div class="eye-view" id="right-eye">
       <canvas id="canvas-right"></canvas>
     </div>
   </div>
 
-  <!-- Hidden Video Feed -->
   <video id="webcam" autoplay playsinline muted></video>
 
-  <!-- VR Toggle Button -->
   <button id="vr-btn" title="Toggle VR Mode">
     <svg viewBox="0 0 24 24">
       <path d="M21 6H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h5l2 2h4l2-2h5c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-12 7c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm9 0c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
     </svg>
   </button>
 
+  <script>
+    const video = document.getElementById('webcam');
+    const canvasLeft = document.getElementById('canvas-left');
+    const ctxLeft = canvasLeft.getContext('2d');
+    const canvasRight = document.getElementById('canvas-right');
+    const ctxRight = canvasRight.getContext('2d');
+
+    const statusText = document.getElementById('status');
+    const vrBtn = document.getElementById('vr-btn');
+    const rightEye = document.getElementById('right-eye');
+
+    let model;
+    let isVrMode = false;
+    let isDetecting = false;
+
+    let trackedObjects = [];
+    let nextTrackId = 1;
+
+    // 1. Initialize Mobile Rear Camera
+    async function setupCamera() {
+      const constraints = {
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+      } catch (err) {
+        console.warn("Falling back to default camera:", err);
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" },
+          audio: false
+        });
+        video.srcObject = fallbackStream;
+      }
+
+      return new Promise((resolve) => {
+        video.onloadedmetadata = () => resolve(video);
+      });
+    }
+
+    // 2. Persistent Multi-Object Tracking Engine (Cap 2-4 items)
+    function updateTrackingHistory(predictions) {
+      const currentDetections = predictions.filter(p => p.score > 0.45).slice(0, 4);
+      const updatedTracked = [];
+
+      currentDetections.forEach(pred => {
+        const [x, y, w, h] = pred.bbox;
+        const centerX = x + w / 2;
+        const centerY = y + h / 2;
+
+        let closest = null;
+        let minDistance = 100;
+
+        trackedObjects.forEach(obj => {
+          const dist = Math.hypot(obj.centerX - centerX, obj.centerY - centerY);
+          if (dist < minDistance && obj.label === pred.class) {
+            minDistance = dist;
+            closest = obj;
+          }
+        });
+
+        let history = [];
+        let id = nextTrackId++;
+
+        if (closest) {
+          id = closest.id;
+          history = closest.history;
+        }
+
+        history.push({ x: centerX, y: centerY });
+        if (history.length > 12) history.shift();
+
+        updatedTracked.push({
+          id: id,
+          label: pred.class,
+          score: pred.score,
+          bbox: pred.bbox,
+          centerX: centerX,
+          centerY: centerY,
+          history: history
+        });
+      });
+
+      trackedObjects = updatedTracked;
+    }
+
+    // 3. Fullscreen Cover Rendering Engine
+    function renderFrame(ctx, canvas) {
+      const parent = canvas.parentElement;
+      const targetW = parent.clientWidth;
+      const targetH = parent.clientHeight;
+
+      // Sync physical resolution to container pixel size
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+
+      ctx.clearRect(0, 0, targetW, targetH);
+
+      const vW = video.videoWidth || 640;
+      const vH = video.videoHeight || 480;
+
+      // Math.max forces the feed to completely fill/cover the full screen
+      const scale = Math.max(targetW / vW, targetH / vH);
+      const renderW = vW * scale;
+      const renderH = vH * scale;
+      const offsetX = (targetW - renderW) / 2;
+      const offsetY = (targetH - renderH) / 2;
+
+      // Draw camera background
+      ctx.drawImage(video, offsetX, offsetY, renderW, renderH);
+
+      const scaleX = renderW / vW;
+      const scaleY = renderH / vH;
+
+      // Render tracked bounding targets
+      trackedObjects.forEach(obj => {
+        const [x, y, w, h] = obj.bbox;
+
+        const scaledX = (x * scaleX) + offsetX;
+        const scaledY = (y * scaleY) + offsetY;
+        const scaledW = w * scaleX;
+        const scaledH = h * scaleY;
+
+        // Motion Trail Line
+        if (obj.history.length > 1) {
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(0, 255, 136, 0.7)';
+          ctx.lineWidth = 3;
+          obj.history.forEach((pt, i) => {
+            const hX = (pt.x * scaleX) + offsetX;
+            const hY = (pt.y * scaleY) + offsetY;
+            if (i === 0) ctx.moveTo(hX, hY);
+            else ctx.lineTo(hX, hY);
+          });
+          ctx.stroke();
+        }
+
+        // Bounding Box
+        ctx.strokeStyle = '#00FF88';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(scaledX, scaledY, scaledW, scaledH);
+
+        // Target Center Dot
+        const cx = (obj.centerX * scaleX) + offsetX;
+        const cy = (obj.centerY * scaleY) + offsetY;
+        ctx.fillStyle = '#00FF88';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 5, 0, 2 * Math.PI);
+        ctx.fill();
+
+        // Object Label Tag
+        const labelText = `#${obj.id} ${obj.label.toUpperCase()} ${Math.round(obj.score * 100)}%`;
+        ctx.font = 'bold 12px sans-serif';
+        const textWidth = ctx.measureText(labelText).width;
+
+        ctx.fillStyle = '#00FF88';
+        ctx.fillRect(scaledX, scaledY > 24 ? scaledY - 24 : scaledY, textWidth + 10, 22);
+
+        ctx.fillStyle = '#000000';
+        ctx.fillText(labelText, scaledX + 5, scaledY > 24 ? scaledY - 8 : scaledY + 15);
+      });
+    }
+
+    // 4. Async Frame Loop
+    async function processFrame() {
+      if (!isDetecting && video.readyState === 4) {
+        isDetecting = true;
+        const predictions = await model.detect(video);
+        updateTrackingHistory(predictions);
+        isDetecting = false;
+      }
+
+      renderFrame(ctxLeft, canvasLeft);
+
+      if (isVrMode) {
+        renderFrame(ctxRight, canvasRight);
+      }
+
+      requestAnimationFrame(processFrame);
+    }
+
+    // 5. Toggle VR Split Screen
+    async function toggleVR() {
+      isVrMode = !isVrMode;
+
+      if (isVrMode) {
+        rightEye.style.display = 'block';
+
+        try {
+          if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+          }
+          if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock('landscape').catch(() => {});
+          }
+        } catch (e) {
+          console.log("Fullscreen/Lock warning:", e);
+        }
+      } else {
+        rightEye.style.display = 'none';
+
+        if (document.exitFullscreen && document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+        if (screen.orientation && screen.orientation.unlock) {
+          screen.orientation.unlock();
+        }
+      }
+    }
+
+    vrBtn.addEventListener('click', toggleVR);
+
+    // Entry Point
+    async function init() {
+      try {
+        await setupCamera();
+        statusText.innerText = "Loading AI Model...";
+        model = await cocoSsd.load();
+        statusText.innerText = "Tracking Active (2-4 Objects)";
+        setTimeout(() => { statusText.style.opacity = '0.3'; }, 3000);
+        processFrame();
+      } catch (err) {
+        statusText.innerText = "Camera Error: " + err.message;
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
 </body>
-</html>
+</html
